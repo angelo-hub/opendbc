@@ -30,6 +30,7 @@ jobs:
     timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}  # gh would otherwise target the parent repo (commaai)
       FORCE: ${{ inputs.force || false }}
     steps:
       - uses: actions/checkout@v7
