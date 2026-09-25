@@ -31,6 +31,11 @@ step() {
   echo "::group::$name"
   if (source ./setup.sh >/dev/null && "$@") > "$logf" 2>&1; then
     echo "- ✅ $name" >> "$report"
+  elif grep -qE 'Incorrect Usage|command not found|No such file or directory|ModuleNotFoundError' "$logf"; then
+    # A check that cannot even start fails the same way on port; never let that pass as pre-existing.
+    status=red
+    echo "- ❌ **$name** could not run" >> "$report"
+    details "$logf"
   elif (cd "$PORT_TREE" && source ./setup.sh >/dev/null && "$@") > "$logf.port" 2>&1; then
     status=red
     echo "- ❌ **$name** (passes on \`$PORT_BRANCH\`, fails after the merge)" >> "$report"
@@ -44,7 +49,7 @@ step() {
 
 step "safety suite (opendbc/safety/tests/test.sh)" ./opendbc/safety/tests/test.sh
 for c in misra cpplint ruff ty codespell unittest; do
-  step "lefthook: $c" lefthook run test --commands "$c"
+  step "lefthook: $c" lefthook run test --command "$c"
 done
 # shellcheck disable=SC2086
 step "panda safety vs CarState on test routes ($CAR_DIFF_PLATFORMS)" \
