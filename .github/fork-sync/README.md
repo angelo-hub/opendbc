@@ -17,8 +17,12 @@ can update them, so the workflow and the repair agent physically cannot write ei
 1. `detect.sh`: fetch upstream (`config.sh: UPSTREAM_BRANCHES`). If `port` already contains it, or nothing
    moved since the last run, exit silently. Most runs end here.
 2. `merge.sh`: reset `integration` to `port`, merge each upstream branch.
-3. Clean merge: `gate.sh` runs the safety suite, lint + unit tests, and a car behavior report that replays
-   Subaru segments on `port` and on `integration` and fails on any difference (`port_diff.py`).
+3. Clean merge: `gate.sh` runs the safety suite, each lefthook check (misra, cpplint, ruff, ty, codespell,
+   unittest), upstream's panda-safety-vs-CarState route test for the Subaru angle platforms
+   (`test_platform_models.py`), and a car behavior report that replays Subaru segments on `port` and on
+   `integration` and fails on any difference (`port_diff.py`). Platforms with no public segments
+   (OUTBACK_2023, CROSSTREK_2025, ASCENT_2023) fall back to their routes.py test route.
+   A check that also fails on `port` is reported ⚠️ pre-existing and does not turn the gate red.
    Green opens or refreshes a PR `integration -> port`. Red parks the merge on `sync/failed` and reports.
 4. Conflict: anything matching `STOP_PATHS` (`opendbc/safety/`) or a delete/rename conflict stops the run.
    Otherwise the repair agent (claude-code-action) edits the conflicted files and writes `RESOLUTION.md`.
