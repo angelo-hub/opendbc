@@ -92,8 +92,8 @@ def main() -> int:
     results.extend(out)
     return out
 
-  car_diff.download_refs = copy_refs  # ty: ignore[invalid-assignment]
-  car_diff.run_replay = capture_replay  # ty: ignore[invalid-assignment]
+  car_diff.download_refs = copy_refs
+  car_diff.run_replay = capture_replay
 
   for platform in args.platforms:
     source = "routes.py test route" if platform in fallback else "commaCarSegments"
