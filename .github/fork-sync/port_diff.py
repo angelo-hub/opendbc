@@ -51,8 +51,8 @@ def patch_car_diff():
     msgs = LogReader(str(get_cached_segment(route, int(n))), only_union_types=True, sort_by_time=True)
     return [m for m in msgs if m.which() == 'can']
 
-  setattr(comma_car_segments, "get_comma_car_segments_database", lambda: database)
-  setattr(car_diff, "load_can_messages", load_can_messages)
+  comma_car_segments.get_comma_car_segments_database = lambda: database  # ty: ignore[invalid-assignment]
+  car_diff.load_can_messages = load_can_messages  # ty: ignore[invalid-assignment]
   return car_diff, database, fallback
 
 
@@ -92,8 +92,8 @@ def main() -> int:
     results.extend(out)
     return out
 
-  setattr(car_diff, "download_refs", copy_refs)
-  setattr(car_diff, "run_replay", capture_replay)
+  car_diff.download_refs = copy_refs  # ty: ignore[invalid-assignment]
+  car_diff.run_replay = capture_replay  # ty: ignore[invalid-assignment]
 
   for platform in args.platforms:
     source = "routes.py test route" if platform in fallback else "commaCarSegments"
