@@ -1,8 +1,11 @@
 name: fork sync
 
-# Weekly upstream merge into `integration`, gated on tests passing (not on the absence of conflicts).
-# The repair agent runs only when the merge conflicts in an allowed path. Nothing here writes `port`
-# or `device`; see .github/fork-sync/README.md.
+# Weekly upstream sync of each line into its integration branch, gated on tests passing (not on the absence
+# of conflicts). The repair agent runs only when a step conflicts in an allowed path. Nothing here writes a
+# port or device branch; see .github/fork-sync/README.md.
+#
+# Two lines share this repo (see .github/fork-sync/config.sh). The tools always come from the default
+# branch (`port`), so `sp-port` holds nothing but sunnypilot's opendbc plus the angle port.
 
 on:
   schedule:
@@ -13,10 +16,11 @@ on:
         description: Run even if upstream has not moved since the last run
         type: boolean
         default: false
-
-concurrency:
-  group: fork-sync
-  cancel-in-progress: false
+      line:
+        description: Which line to run
+        type: choice
+        options: [all, comma, sp]
+        default: all
 
 permissions:
   contents: write
@@ -26,35 +30,61 @@ permissions:
 jobs:
   sync:
     if: github.repository == 'angelo-hub/opendbc'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - line: comma
+            port: port
+          - line: sp
+            port: sp-port
+    concurrency:
+      group: fork-sync-${{ matrix.line }}
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}  # gh would otherwise target the parent repo (commaai)
       FORCE: ${{ inputs.force || false }}
+      FORK_SYNC_LINE: ${{ matrix.line }}
+      SELECTED: ${{ inputs.line == '' || inputs.line == 'all' || inputs.line == matrix.line }}
     steps:
       - uses: actions/checkout@v7
+        if: env.SELECTED == 'true'
         with:
-          ref: port
+          ref: ${{ matrix.port }}
           fetch-depth: 0
 
-      - name: git identity
+      - uses: actions/checkout@v7
+        if: env.SELECTED == 'true'
+        with:
+          ref: port
+          path: .fork-sync-tools
+          sparse-checkout: .github/fork-sync
+
+      - name: tools and git identity
+        if: env.SELECTED == 'true'
         run: |
+          mv .fork-sync-tools/.github/fork-sync "$RUNNER_TEMP/fork-sync-tools"
+          rm -rf .fork-sync-tools
+          echo "TOOLS=$RUNNER_TEMP/fork-sync-tools" >> "$GITHUB_ENV"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - id: detect
         name: 1. fetch upstream
-        run: .github/fork-sync/detect.sh
+        if: env.SELECTED == 'true'
+        run: $TOOLS/detect.sh
 
       - id: merge
         name: 2-4. merge upstream and triage conflicts
         if: steps.detect.outputs.DECISION == 'run'
-        run: .github/fork-sync/merge.sh
+        run: $TOOLS/merge.sh
 
       - id: prompt
         if: steps.merge.outputs.RESULT == 'conflict'
-        run: .github/fork-sync/render_prompt.sh
+        run: $TOOLS/render_prompt.sh
 
       - id: agent
         name: repair agent
@@ -68,28 +98,28 @@ jobs:
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 60
-            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-files:*),Bash(git merge-base:*),Bash(git blame:*),Bash(.github/fork-sync/agent_test.sh:*)"
-            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(git checkout:*),Bash(git reset:*),Bash(git restore:*),Bash(git merge:*),Bash(git add:*),Bash(git rebase:*),WebFetch,WebSearch"
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git ls-files:*),Bash(git merge-base:*),Bash(git blame:*),Bash(${{ runner.temp }}/fork-sync-tools/agent_test.sh:*)"
+            --disallowedTools "Bash(git push:*),Bash(git commit:*),Bash(git checkout:*),Bash(git reset:*),Bash(git restore:*),Bash(git merge:*),Bash(git read-tree:*),Bash(git add:*),Bash(git rebase:*),WebFetch,WebSearch"
 
       - id: verify
         name: check the agent's resolution
         if: steps.merge.outputs.RESULT == 'conflict' && steps.agent.outcome == 'success'
-        run: .github/fork-sync/verify.sh
+        run: $TOOLS/verify.sh
 
       - id: resume
-        name: merge remaining upstream branches
+        name: apply remaining upstream specs
         if: steps.verify.outputs.VERIFY == 'ok'
-        run: .github/fork-sync/merge.sh continue
+        run: $TOOLS/merge.sh continue
 
       - id: gate
         name: gate (safety suite, tests, car behavior report)
         continue-on-error: true  # a crashed gate is reported as red by publish
         if: steps.merge.outputs.RESULT == 'clean' || steps.resume.outputs.RESULT == 'clean'
-        run: .github/fork-sync/gate.sh
+        run: $TOOLS/gate.sh
 
       - name: publish
         if: always() && steps.detect.outputs.DECISION == 'run'
         continue-on-error: true  # keep scheduled runs green; the status issue is the notification channel
         env:
           AGENT_OUTCOME: ${{ steps.agent.outcome }}
-        run: .github/fork-sync/publish.sh
+        run: $TOOLS/publish.sh
